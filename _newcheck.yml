@@ -1,0 +1,93 @@
+name: VPN Gate Node Check
+
+on:
+  # 定时检测: 默认每 30 分钟一次。改成每 60 分钟: cron: "0 * * * *"
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: gate-check
+  cancel-in-progress: false
+
+# 所有可调参数优先读仓库 Variables(Settings -> Secrets and variables -> Actions -> Variables),
+# 未配置时回落到下面这份默认值, 所以不配也能照常跑。
+env:
+  CHECK_WORKER: ${{ vars.CHECK_WORKER_URL || 'https://ch.dasaodei.kdns.fr/check?sstp=vpn:vpn@' }}
+  CHECK_CONCURRENCY: ${{ vars.CHECK_CONCURRENCY || '32' }}
+  CHECK_TIMEOUT: ${{ vars.CHECK_TIMEOUT || '90' }}
+  EDGE_HOSTS: ${{ vars.EDGE_HOSTS || 'saas.072159.xyz:443,hzytjy.cn:443,ali.nonull.pp.ua:443,auto.dolby.dpdns.org:443,cdn.cnno.de:443,saas.sin.fan:443,cf.777791.xyz:443' }}
+  EDT_UUID: ${{ vars.EDT_UUID || '90c14586-42a5-4c30-959d-8b36608d67f7' }}
+  EDT_DOMAIN: ${{ vars.EDT_DOMAIN || 'ed.xiaolei.qzz.io' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # 站点地址按当前仓库自动推导, 换仓库/改名都不用再改代码
+      - name: Resolve public URLs
+        run: |
+          owner="${GITHUB_REPOSITORY%%/*}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          base="https://${owner}.github.io/${repo}"
+          {
+            echo "CHAIN_URL=${base}/chains.txt"
+            echo "HOSTS_URL=${base}/hosts.txt"
+            echo "SUB_URL=${base}/sub.txt"
+            echo "SITE_URL=${base}/"
+          } >> "$GITHUB_ENV"
+          echo "public base: ${base}/"
+
+      - name: Get VPN Gate nodes + check via Cloudflare Worker + build page
+        run: python vpngate.py
+
+      - name: Ensure GitHub Pages is enabled (one-time auto setup)
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/pages")
+          echo "Pages API status: $code"
+          if [ "$code" = "404" ]; then
+            echo "首次运行: 启用 GitHub Pages (source = GitHub Actions, 目录 /public)"
+            curl -sS -X PUT \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"build_type":"workflow","source":{"branches":["main"],"path":"/public"}}' \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/pages"
+            echo
+            sleep 10
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: 'public'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - name: Show site URL
+        run: 'echo "site: ${SITE_URL} (deploy outcome: ${{ steps.deployment.outcome }})"'
