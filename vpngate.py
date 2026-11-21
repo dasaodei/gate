@@ -522,8 +522,8 @@ def build_hosts_text(data):
 
 
 # edgetunnel 完整订阅 (vless://) 配置
-EDT_UUID = os.environ.get("EDT_UUID", "56282d60-c9e2-401a-b6db-1d86cfc9d559")
-EDT_DOMAIN = os.environ.get("EDT_DOMAIN", "ed.dasaodei.kdns.fr")
+EDT_UUID = os.environ.get("EDT_UUID", "1c86602c-b07a-4c39-947c-b8ad1f6953d5")
+EDT_DOMAIN = os.environ.get("EDT_DOMAIN", "edt.dasaodei.kdns.fr")
 EDT_FINGERPRINT = os.environ.get("EDT_FINGERPRINT", "chrome")
 SUB_URL = os.environ.get("SUB_URL", "https://dasaodei.github.io/gate/sub.txt")
 
